@@ -46,6 +46,30 @@
       "hint": "Three timestamps.",
       "flag": "flag{modified_accessed_created}"
     }
+    {
+  "id": "for-2",
+  "title": "Suspicious DNS",
+  "points": 250,
+  "prompt": "Analyze the PCAP and find the suspicious domain queried.",
+  "hint": "Filter: dns && dns.qry.name",
+  "flag": "flag{suspicious-domain.com}",
+
+  "difficulty": "medium",
+  "tags": ["pcap", "dns", "wireshark"],
+
+  "external_link": "https://example.com/background-reading",
+  "attachments": [
+    {
+      "name": "traffic.pcap",
+      "type": "pcap",
+      "url": "https://raw.githubusercontent.com/youruser/mini-ctf/main/assets/traffic.pcap"
+    }
+  ],
+  "writeup": {
+    "visible": "after_solve",
+    "content_md": "### Solution idea\n1) Open the PCAP in Wireshark.\n2) Apply filter: `dns`.\n3) Look for rare domain queries.\n\n**Answer**: `suspicious-domain.com`"
+  }
+}
   ],
  "misc": [
   {
