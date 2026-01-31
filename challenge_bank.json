@@ -1,1 +1,61 @@
+{
+  "web": [
+    {
+      "id": "web-1",
+      "title": "Login Bypass (Toy)",
+      "points": 100,
+      "prompt": "A login form checks credentials client-side only. What is the vulnerability class?",
+      "hint": "Think trust boundary.",
+      "flag": "flag{client_side_validation}"
+    },
+    {
+      "id": "web-2",
+      "title": "JWT Confusion",
+      "points": 200,
+      "prompt": "A service accepts JWT with alg=none. What should be disabled?",
+      "hint": "Algorithm choice matters.",
+      "flag": "flag{disable_none_alg}"
+    }
+  ],
+  "osint": [
+    {
+      "id": "osint-1",
+      "title": "Metadata Habit",
+      "points": 100,
+      "prompt": "Which file format commonly leaks EXIF GPS by default from cameras?",
+      "hint": "Photos.",
+      "flag": "flag{jpeg}"
+    }
+  ],
+  "crypto": [
+    {
+      "id": "crypto-1",
+      "title": "Base64 Isn’t Crypto",
+      "points": 100,
+      "prompt": "Decode: ZmxhZ3tub3RfZW5jcnlwdGlvbn0=",
+      "hint": "Base64 decode.",
+      "flag": "flag{not_encryption}"
+    }
+  ],
+  "forensics": [
+    {
+      "id": "for-1",
+      "title": "Time is Evidence",
+      "points": 150,
+      "prompt": "What does 'MAC times' stand for in file system forensics?",
+      "hint": "Three timestamps.",
+      "flag": "flag{modified_accessed_created}"
+    }
+  ],
+  "misc": [
+    {
+      "id": "misc-1",
+      "title": "Regex Warmup",
+      "points": 100,
+      "prompt": "Write the shortest regex that matches 'flag{...}' where ... is any non-} chars.",
+      "hint": "Escape braces.",
+      "flag": "flag{flag\\{[^}]+\\}}"
+    }
+  ]
+}
 
