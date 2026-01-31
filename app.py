@@ -256,7 +256,7 @@ if not selected_ch:
     st.stop()
 
 st.markdown(f"## {CATEGORY_LABELS[sel_cat]} → {selected_ch.get('title','Untitled')}")
-st.write(selected_ch.get("prompt", ""))
+st.markdown(selected_ch.get("prompt",""))
 render_tags_and_difficulty(selected_ch)
 render_external_link(selected_ch)
 render_attachments(selected_ch)
