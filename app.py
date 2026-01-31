@@ -281,12 +281,11 @@ flag_in = st.text_input(
     key=flag_key
 )
 
+submit = st.button("Submit", type="primary", disabled=already)
+
 if submit:
     correct = normalize_flag(selected_ch.get("flag", ""))
     got = normalize_flag(flag_in)
-
-    st.session_state[flag_key] = ""
-    st.rerun()
 
     if not got:
         st.error("Flag cannot be empty.")
@@ -299,6 +298,10 @@ if submit:
         st.balloons()
     else:
         st.error("Wrong flag.")
+
+    # reset after any submit (correct or wrong)
+    st.session_state[flag_key] = ""
+    st.rerun()
 
 render_writeup(selected_ch, solved=(sel_id in st.session_state.solved))
 
