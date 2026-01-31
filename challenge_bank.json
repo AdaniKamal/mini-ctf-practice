@@ -47,14 +47,14 @@
       "flag": "flag{modified_accessed_created}"
     }
   ],
-  "misc": [
-    {
-      "id": "misc-1",
-      "title": "Regex Warmup",
-      "points": 100,
-      "prompt": "Write the shortest regex that matches 'flag{...}' where ... is any non-} chars.",
-      "hint": "Escape braces.",
-      "flag": "flag{flag\\{[^}]+\\}}"
+ "misc": [
+  {
+    "id": "misc-1",
+    "title": "Warmup",
+    "points": 100,
+    "prompt": "Decode what is this?",
+    "hint": "Mw==\nMQ==\nMA==\nOA==\new==\nbWlrZQ==\nYWxwaGE=\nbGltYQ==\nYnJhdm8=\nYWxwaGE=\ndGFuZ28=\ndGFuZ28=\nfQ==",
+    "flag": "flag{MALBATT}"
     }
   ]
 }
