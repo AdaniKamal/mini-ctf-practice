@@ -1,9 +1,7 @@
 import json
 import os
 import time
-import uuid
-from dataclasses import dataclass
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any
 
 import streamlit as st
 
@@ -19,7 +17,7 @@ CATEGORY_LABELS = {
     "osint": "OSINT",
     "crypto": "Crypto",
     "forensics": "Forensics",
-    "misc": "Misc"
+    "misc": "Misc",
 }
 
 # ----------------------------
@@ -30,7 +28,6 @@ def load_bank(path: str) -> Dict[str, List[Dict[str, Any]]]:
         return {c: [] for c in CATEGORIES}
     with open(path, "r", encoding="utf-8") as f:
         bank = json.load(f)
-    # Ensure all categories exist
     for c in CATEGORIES:
         bank.setdefault(c, [])
     return bank
@@ -41,30 +38,26 @@ def normalize_flag(s: str) -> str:
 def now_epoch() -> int:
     return int(time.time())
 
-def init_room_state():
-    if "room_code" not in st.session_state:
-        st.session_state.room_code = ""
-    if "player_name" not in st.session_state:
-        st.session_state.player_name = ""
-    if "room_started_at" not in st.session_state:
-        st.session_state.room_started_at = None
-    if "room_seed" not in st.session_state:
-        st.session_state.room_seed = None
-    if "selected" not in st.session_state:
-        st.session_state.selected = None
-    if "solved" not in st.session_state:
-        st.session_state.solved = set()  # challenge ids solved by this browser session
-    if "score" not in st.session_state:
-        st.session_state.score = 0
-    if "team_log" not in st.session_state:
-        # Lightweight team log stored in browser session; for real shared scoreboard you’d use DB
-        st.session_state.team_log = []  # (timestamp, player, chall_id, points)
+def fmt_hms(seconds: int) -> str:
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+def remaining_seconds(started_at: int) -> int:
+    elapsed = now_epoch() - started_at
+    return max(0, CTF_DURATION_SECONDS - elapsed)
+
+def points_for(ch: Dict[str, Any]) -> int:
+    try:
+        return int(ch.get("points", 0))
+    except Exception:
+        return 0
 
 def seeded_sample(items: List[Dict[str, Any]], k: int, seed: int) -> List[Dict[str, Any]]:
-    # Deterministic selection without importing random (keeps deployment simpler)
+    """Deterministic 'random' sample based on hash."""
     if not items:
         return []
-    # Simple hash-based ordering
     scored = []
     for it in items:
         key = f"{seed}:{it.get('id','')}:{it.get('title','')}"
@@ -79,40 +72,36 @@ def build_room_challenges(bank: Dict[str, List[Dict[str, Any]]], room_seed: int)
         per_cat[c] = seeded_sample(bank.get(c, []), 5, room_seed)
     return per_cat
 
-def remaining_seconds(started_at: int) -> int:
-    elapsed = now_epoch() - started_at
-    return max(0, CTF_DURATION_SECONDS - elapsed)
-
-def fmt_hms(seconds: int) -> str:
-    h = seconds // 3600
-    m = (seconds % 3600) // 60
-    s = seconds % 60
-    return f"{h:02d}:{m:02d}:{s:02d}"
-
-def points_for(ch: Dict[str, Any]) -> int:
-    try:
-        return int(ch.get("points", 0))
-    except Exception:
-        return 0
+def init_state():
+    st.session_state.setdefault("room_code", "")
+    st.session_state.setdefault("player_name", "")
+    st.session_state.setdefault("room_started_at", None)
+    st.session_state.setdefault("room_seed", None)
+    st.session_state.setdefault("selected", None)
+    st.session_state.setdefault("solved", set())
+    st.session_state.setdefault("score", 0)
+    st.session_state.setdefault("team_log", [])  # local log
+    st.session_state.setdefault("last_submit", None)  # tuple(kind, msg)
+    st.session_state.setdefault("do_balloons", False)
 
 def render_tags_and_difficulty(ch: Dict[str, Any]):
-    tags = ch.get("tags", [])
-    difficulty = ch.get("difficulty", "")
-    pieces = []
+    tags = ch.get("tags", []) or []
+    difficulty = (ch.get("difficulty") or "").strip()
+    parts = []
     if difficulty:
-        pieces.append(f"**Difficulty:** {difficulty}")
+        parts.append(f"**Difficulty:** {difficulty}")
     if tags:
-        pieces.append("**Tags:** " + ", ".join(tags))
-    if pieces:
-        st.caption(" | ".join(pieces))
+        parts.append("**Tags:** " + ", ".join(tags))
+    if parts:
+        st.caption(" | ".join(parts))
 
 def render_external_link(ch: Dict[str, Any]):
     link = ch.get("external_link")
-    if link:
+    if link and isinstance(link, str):
         st.link_button("Open external link", link)
 
 def render_attachments(ch: Dict[str, Any]):
-    atts = ch.get("attachments", [])
+    atts = ch.get("attachments", []) or []
     if not atts:
         return
     st.markdown("### Attachments")
@@ -126,7 +115,7 @@ def render_attachments(ch: Dict[str, Any]):
 
 def can_show_writeup(ch: Dict[str, Any], solved: bool) -> bool:
     w = ch.get("writeup")
-    if not w:
+    if not isinstance(w, dict):
         return False
     mode = (w.get("visible") or "after_solve").lower()
     if mode == "always":
@@ -137,68 +126,89 @@ def can_show_writeup(ch: Dict[str, Any], solved: bool) -> bool:
 
 def render_writeup(ch: Dict[str, Any], solved: bool):
     w = ch.get("writeup")
-    if not w:
+    if not isinstance(w, dict):
         return
     if can_show_writeup(ch, solved):
         with st.expander("Writeup / Solution"):
-            st.markdown(w.get("content_md", ""), unsafe_allow_html=False)
+            st.markdown(w.get("content_md", "") or "")
 
 # ----------------------------
-# UI
+# Submit callback (IMPORTANT)
+# ----------------------------
+def handle_submit(flag_key: str, correct_flag: str, sel_id: str, pts: int, player: str):
+    got = normalize_flag(st.session_state.get(flag_key, ""))
+    correct = normalize_flag(correct_flag)
+
+    if not got:
+        st.session_state.last_submit = ("error", "Flag cannot be empty.")
+    elif got == correct:
+        st.session_state.solved.add(sel_id)
+        st.session_state.score += pts
+        st.session_state.team_log.append((now_epoch(), player or "Player", sel_id, pts))
+        st.session_state.last_submit = ("success", f"Correct! +{pts} points.")
+        st.session_state.do_balloons = True
+    else:
+        st.session_state.last_submit = ("error", "Wrong flag.")
+
+    # ✅ Clear input SAFELY inside callback
+    st.session_state[flag_key] = ""
+
+# ----------------------------
+# App UI
 # ----------------------------
 st.set_page_config(page_title="Mini CTF Practice", layout="wide")
-init_room_state()
+init_state()
 
+# Load bank (if JSON is invalid, you'll get JSONDecodeError—fix commas/quotes)
 bank = load_bank(BANK_PATH)
 
 st.title("Mini Jeopardy CTF Practice (Duo Ready)")
 
 with st.sidebar:
     st.header("Room Setup")
-    st.caption("Share one Room Code with your duo so you both get the same randomized board + timer.")
+    st.caption("Use the same Room Code with your duo to get the same board.")
 
     st.session_state.player_name = st.text_input("Your name", value=st.session_state.player_name, placeholder="e.g., Dani")
     st.session_state.room_code = st.text_input("Room code", value=st.session_state.room_code, placeholder="e.g., REHACK-APR29")
 
-    colA, colB = st.columns(2)
+    c1, c2 = st.columns(2)
 
-    if colA.button("Start / Join Room", use_container_width=True):
+    if c1.button("Start / Join Room", use_container_width=True):
         if not st.session_state.room_code.strip():
             st.error("Room code is required.")
         else:
-            # Room seed derived from room code (deterministic)
             seed = abs(hash(st.session_state.room_code.strip().lower())) % (10**9)
             st.session_state.room_seed = seed
             if st.session_state.room_started_at is None:
                 st.session_state.room_started_at = now_epoch()
             st.success(f"Joined room: {st.session_state.room_code}")
 
-    if colB.button("Reset (this browser)", use_container_width=True):
+    if c2.button("Reset (this browser)", use_container_width=True):
         st.session_state.room_started_at = None
         st.session_state.room_seed = None
         st.session_state.selected = None
         st.session_state.solved = set()
         st.session_state.score = 0
         st.session_state.team_log = []
-        st.info("Reset done for this browser session.")
+        st.session_state.last_submit = None
+        st.session_state.do_balloons = False
+        st.info("Reset done (this browser session).")
 
     st.divider()
     st.header("Challenge Bank")
-    st.caption("Edit challenge_bank.json to add more challenges. Keep unique IDs per challenge.")
-    st.write(f"Loaded categories: {', '.join(CATEGORIES)}")
+    st.caption("Edit challenge_bank.json. Keep unique IDs per challenge.")
     st.write("Counts:")
     for c in CATEGORIES:
         st.write(f"- {CATEGORY_LABELS[c]}: {len(bank.get(c, []))}")
 
-# Must join a room first
+# Must join room first
 if not st.session_state.room_seed or not st.session_state.room_started_at:
     st.warning("Enter a Room Code in the sidebar, then click **Start / Join Room**.")
     st.stop()
 
-room_board = build_room_challenges(bank, st.session_state.room_seed)
-
-# Top bar: countdown + score
+# Countdown + score
 rem = remaining_seconds(st.session_state.room_started_at)
+
 top1, top2, top3 = st.columns([2, 1, 1])
 with top1:
     st.subheader(f"Room: {st.session_state.room_code}")
@@ -211,40 +221,50 @@ if rem <= 0:
     st.error("Time is up. Reset the room to play again (sidebar).")
     st.stop()
 
-st.caption("Board is randomized by Room Code. Each category shows up to 5 challenges from your bank.")
+room_board = build_room_challenges(bank, st.session_state.room_seed)
 
-# Board view: category columns with clickable challenge tiles
+st.caption("Board is randomized by Room Code. Each category shows up to 5 challenges.")
+
+# Board tiles
 cols = st.columns(len(CATEGORIES))
 
-def challenge_tile(ch: Dict[str, Any], category: str):
-    ch_id = ch.get("id", "")
-    solved = ch_id in st.session_state.solved
-    title = ch.get("title", "Untitled")
-    pts = points_for(ch)
-    label = f"{title} ({pts})"
-    if solved:
-        label = f"✅ {label}"
-    if st.button(label, key=f"btn-{category}-{ch_id}", use_container_width=True):
-        st.session_state.selected = (category, ch_id)
+def choose_challenge(category: str, ch_id: str):
+    st.session_state.selected = (category, ch_id)
 
-for i, c in enumerate(CATEGORIES):
+for i, cat in enumerate(CATEGORIES):
     with cols[i]:
-        st.markdown(f"### {CATEGORY_LABELS[c]}")
-        for ch in room_board.get(c, []):
-            challenge_tile(ch, c)
-        if not room_board.get(c):
+        st.markdown(f"### {CATEGORY_LABELS[cat]}")
+        if not room_board.get(cat):
             st.info("No challenges in bank yet.")
+            continue
+
+        for ch in room_board[cat]:
+            cid = ch.get("id", "")
+            title = ch.get("title", "Untitled")
+            pts = points_for(ch)
+            solved = cid in st.session_state.solved
+
+            label = f"{title} ({pts})"
+            if solved:
+                label = f"✅ {label}"
+
+            st.button(
+                label,
+                key=f"tile_{cat}_{cid}",
+                use_container_width=True,
+                on_click=choose_challenge,
+                args=(cat, cid)
+            )
 
 # Selected challenge panel
 st.divider()
-sel = st.session_state.selected
-if not sel:
+
+if not st.session_state.selected:
     st.info("Click a challenge tile to open it.")
     st.stop()
 
-sel_cat, sel_id = sel
+sel_cat, sel_id = st.session_state.selected
 
-# Find selected challenge
 selected_ch = None
 for ch in room_board.get(sel_cat, []):
     if ch.get("id") == sel_id:
@@ -252,15 +272,30 @@ for ch in room_board.get(sel_cat, []):
         break
 
 if not selected_ch:
-    st.warning("That challenge is not on the current board (maybe bank changed). Click another tile.")
+    st.warning("That challenge is not on the current board anymore (bank changed). Click another tile.")
     st.stop()
 
+# Show submit result messages (from callback)
+if st.session_state.last_submit:
+    kind, msg = st.session_state.last_submit
+    if kind == "success":
+        st.success(msg)
+    else:
+        st.error(msg)
+    st.session_state.last_submit = None
+
+if st.session_state.do_balloons:
+    st.balloons()
+    st.session_state.do_balloons = False
+
 st.markdown(f"## {CATEGORY_LABELS[sel_cat]} → {selected_ch.get('title','Untitled')}")
-st.markdown(selected_ch.get("prompt",""))
+st.markdown(selected_ch.get("prompt", "") or "")
+
 render_tags_and_difficulty(selected_ch)
 render_external_link(selected_ch)
 render_attachments(selected_ch)
 
+# Hint (nice rendering)
 hint = selected_ch.get("hint", "")
 if hint:
     with st.expander("Hint"):
@@ -268,44 +303,38 @@ if hint:
 
 already = sel_id in st.session_state.solved
 if already:
-    st.success("You already solved this challenge in this browser session.")
+    st.success("You already solved this challenge (in this browser session).")
 
+# Flag input (keyed per challenge)
 flag_key = f"flag_input_{sel_cat}_{sel_id}"
 if flag_key not in st.session_state:
     st.session_state[flag_key] = ""
 
-flag_in = st.text_input(
+st.text_input(
     "Submit flag",
     placeholder="flag{...}",
     disabled=already,
     key=flag_key
 )
 
-submit = st.button("Submit", type="primary", disabled=already)
+st.button(
+    "Submit",
+    type="primary",
+    disabled=already,
+    on_click=handle_submit,
+    args=(
+        flag_key,
+        selected_ch.get("flag", ""),
+        sel_id,
+        points_for(selected_ch),
+        st.session_state.player_name or "Player"
+    )
+)
 
-if submit:
-    correct = normalize_flag(selected_ch.get("flag", ""))
-    got = normalize_flag(flag_in)
-
-    if not got:
-        st.error("Flag cannot be empty.")
-    elif got == correct:
-        pts = points_for(selected_ch)
-        st.session_state.solved.add(sel_id)
-        st.session_state.score += pts
-        st.session_state.team_log.append((now_epoch(), st.session_state.player_name or "Player", sel_id, pts))
-        st.success(f"Correct! +{pts} points.")
-        st.balloons()
-    else:
-        st.error("Wrong flag.")
-
-    # reset after any submit (correct or wrong)
-    st.session_state[flag_key] = ""
-    st.rerun()
-
+# Writeup (optional; show after solve / always)
 render_writeup(selected_ch, solved=(sel_id in st.session_state.solved))
 
-# Simple local scoreboard (per browser)
+# Local scoreboard
 st.divider()
 st.subheader("Local Solve Log (this browser)")
 if not st.session_state.team_log:
@@ -314,5 +343,4 @@ else:
     for ts, player, cid, pts in reversed(st.session_state.team_log):
         st.write(f"- {time.strftime('%H:%M:%S', time.localtime(ts))} — **{player}** solved `{cid}` (+{pts})")
 
-st.caption("For a real shared duo scoreboard across devices, add a DB (e.g., Supabase). Ask me and I’ll upgrade it.")
-
+st.caption("Want shared duo scoreboard + shared timer across devices? Next step is adding Supabase.")
