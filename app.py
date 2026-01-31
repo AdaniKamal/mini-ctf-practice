@@ -95,6 +95,54 @@ def points_for(ch: Dict[str, Any]) -> int:
     except Exception:
         return 0
 
+def render_tags_and_difficulty(ch: Dict[str, Any]):
+    tags = ch.get("tags", [])
+    difficulty = ch.get("difficulty", "")
+    pieces = []
+    if difficulty:
+        pieces.append(f"**Difficulty:** {difficulty}")
+    if tags:
+        pieces.append("**Tags:** " + ", ".join(tags))
+    if pieces:
+        st.caption(" | ".join(pieces))
+
+def render_external_link(ch: Dict[str, Any]):
+    link = ch.get("external_link")
+    if link:
+        st.link_button("Open external link", link)
+
+def render_attachments(ch: Dict[str, Any]):
+    atts = ch.get("attachments", [])
+    if not atts:
+        return
+    st.markdown("### Attachments")
+    for a in atts:
+        name = a.get("name", "download")
+        url = a.get("url")
+        ftype = a.get("type", "")
+        if url:
+            label = f"Download: {name}" + (f" ({ftype})" if ftype else "")
+            st.link_button(label, url)
+
+def can_show_writeup(ch: Dict[str, Any], solved: bool) -> bool:
+    w = ch.get("writeup")
+    if not w:
+        return False
+    mode = (w.get("visible") or "after_solve").lower()
+    if mode == "always":
+        return True
+    if mode == "after_solve":
+        return solved
+    return False  # "never" or unknown
+
+def render_writeup(ch: Dict[str, Any], solved: bool):
+    w = ch.get("writeup")
+    if not w:
+        return
+    if can_show_writeup(ch, solved):
+        with st.expander("Writeup / Solution"):
+            st.markdown(w.get("content_md", ""), unsafe_allow_html=False)
+
 # ----------------------------
 # UI
 # ----------------------------
