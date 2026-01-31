@@ -213,7 +213,7 @@ st.write(selected_ch.get("prompt", ""))
 hint = selected_ch.get("hint", "")
 if hint:
     with st.expander("Hint"):
-        st.write(hint)
+        st.code(hint, language="text")
 
 already = sel_id in st.session_state.solved
 if already:
