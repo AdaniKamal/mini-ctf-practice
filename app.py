@@ -257,6 +257,9 @@ if not selected_ch:
 
 st.markdown(f"## {CATEGORY_LABELS[sel_cat]} → {selected_ch.get('title','Untitled')}")
 st.write(selected_ch.get("prompt", ""))
+render_tags_and_difficulty(selected_ch)
+render_external_link(selected_ch)
+render_attachments(selected_ch)
 
 hint = selected_ch.get("hint", "")
 if hint:
@@ -267,12 +270,23 @@ already = sel_id in st.session_state.solved
 if already:
     st.success("You already solved this challenge in this browser session.")
 
-flag_in = st.text_input("Submit flag", placeholder="flag{...}", disabled=already)
-submit = st.button("Submit", type="primary", disabled=already)
+flag_key = f"flag_input_{sel_cat}_{sel_id}"
+if flag_key not in st.session_state:
+    st.session_state[flag_key] = ""
+
+flag_in = st.text_input(
+    "Submit flag",
+    placeholder="flag{...}",
+    disabled=already,
+    key=flag_key
+)
 
 if submit:
     correct = normalize_flag(selected_ch.get("flag", ""))
     got = normalize_flag(flag_in)
+
+    st.session_state[flag_key] = ""
+    st.rerun()
 
     if not got:
         st.error("Flag cannot be empty.")
@@ -285,6 +299,8 @@ if submit:
         st.balloons()
     else:
         st.error("Wrong flag.")
+
+render_writeup(selected_ch, solved=(sel_id in st.session_state.solved))
 
 # Simple local scoreboard (per browser)
 st.divider()
